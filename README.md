@@ -49,5 +49,16 @@ chatroom/
 
 1. start the server first
 2. launch one or more client instances
-3. type messages in any client to broadcast to all connected clients
-4. use ctrl+c to exit
+3. when connecting, each client will be prompted to enter a username
+4. usernames must be unique - if a username is already taken, you'll need to reconnect with a different one
+5. messages will be displayed with the sender's username
+6. type messages in any client to broadcast to all connected clients
+7. use ctrl+c to exit
+
+## features
+
+- multi-client support with threading
+- username identification for each client
+- message broadcasting to all connected clients
+- graceful shutdown handling
+- duplicate username prevention

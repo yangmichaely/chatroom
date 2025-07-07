@@ -10,6 +10,10 @@
 #include <mutex>
 #include <algorithm>
 #include <errno.h>
+#include <map>
+#include <string>
+#include <fcntl.h>
+#include <sys/select.h>
 
 const int PORT = 12345;
 const int BACKLOG = 10;
@@ -18,13 +22,13 @@ const int BUFFER_SIZE = 4096;
 // global flag to control thread termination
 std::atomic<bool> shouldTerminate(false);
 
-// store all connected clients
-std::vector<int> clients;
+// store all connected clients with their usernames
+std::map<int, std::string> clientUsernames;
 std::mutex clientsMutex;
 
 void signalHandler(int signal)
 {
-  std::cout << "\nreceived signal " << signal << ". shutting down..." << std::endl;
+  std::cout << ". shutting down..." << std::endl;
   shouldTerminate = true;
 }
 
@@ -68,14 +72,42 @@ int createServerSocket(int port)
 
 int acceptClient(int server_fd)
 {
+  // use select to check if there's a pending connection with timeout
+  fd_set readfds;
+  struct timeval timeout;
+  
+  FD_ZERO(&readfds);
+  FD_SET(server_fd, &readfds);
+  
+  timeout.tv_sec = 1;  // 1 second timeout
+  timeout.tv_usec = 0;
+  
+  int activity = select(server_fd + 1, &readfds, NULL, NULL, &timeout);
+  
+  if (activity < 0) {
+    if (errno == EINTR) {
+      return -1; // interrupted by signal
+    }
+    perror("select");
+    return -1;
+  }
+  
+  if (activity == 0) {
+    return -1; // timeout, no connection pending
+  }
+  
+  if (!FD_ISSET(server_fd, &readfds)) {
+    return -1; // no connection pending
+  }
+  
   struct sockaddr_in client_addr;
   socklen_t addr_len = sizeof(client_addr);
   int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
   if (client_fd < 0)
   {
-    if (shouldTerminate)
+    if (shouldTerminate || errno == EINTR)
     {
-      return -1; // server is shutting down
+      return -1; // server is shutting down or interrupted
     }
     perror("accept");
     return -1;
@@ -83,31 +115,46 @@ int acceptClient(int server_fd)
   return client_fd;
 }
 
-void addClient(int clientFd)
+void addClient(int clientFd, const std::string& username)
 {
   std::lock_guard<std::mutex> lock(clientsMutex);
-  clients.push_back(clientFd);
-  std::cout << "client connected. total clients: " << clients.size() << std::endl;
+  clientUsernames[clientFd] = username;
+  std::cout << "client '" << username << "' connected. total clients: " << clientUsernames.size() << std::endl;
 }
 
 void removeClient(int clientFd)
 {
   std::lock_guard<std::mutex> lock(clientsMutex);
-  clients.erase(std::remove(clients.begin(), clients.end(), clientFd), clients.end());
-  std::cout << "client disconnected. total clients: " << clients.size() << std::endl;
+  auto it = clientUsernames.find(clientFd);
+  if (it != clientUsernames.end()) {
+    std::cout << "client '" << it->second << "' disconnected. total clients: " << clientUsernames.size() - 1 << std::endl;
+    clientUsernames.erase(it);
+  }
 }
 
-void broadcastMessage(int senderFd, const char* buffer, ssize_t bytesRead)
+void broadcastMessage(int senderFd, const std::string& message)
 {
   std::lock_guard<std::mutex> lock(clientsMutex);
-  for (int clientFd : clients)
+  
+  // get sender's username
+  std::string senderUsername = "Unknown";
+  auto senderIt = clientUsernames.find(senderFd);
+  if (senderIt != clientUsernames.end()) {
+    senderUsername = senderIt->second;
+  }
+  
+  // format the message with username
+  std::string formattedMessage = "\n" + senderUsername + ": " + message;
+  
+  for (const auto& client : clientUsernames)
   {
-    if (clientFd != senderFd) // don't send message back to sender
+    if (client.first != senderFd) // don't send message back to sender
     {
       ssize_t totalWritten = 0;
-      while (totalWritten < bytesRead && !shouldTerminate)
+      ssize_t messageLength = formattedMessage.length();
+      while (totalWritten < messageLength && !shouldTerminate)
       {
-        ssize_t bytesWritten = write(clientFd, buffer + totalWritten, bytesRead - totalWritten);
+        ssize_t bytesWritten = write(client.first, formattedMessage.c_str() + totalWritten, messageLength - totalWritten);
         if (bytesWritten <= 0)
         {
           if (errno == EINTR)
@@ -124,14 +171,54 @@ void broadcastMessage(int senderFd, const char* buffer, ssize_t bytesRead)
 void handleClient(int clientFd)
 {
   char buffer[BUFFER_SIZE];
-  addClient(clientFd);
+  
+  // first, ask for username
+  const char* usernamePrompt = "username: ";
+  write(clientFd, usernamePrompt, strlen(usernamePrompt));
+  
+  // read username
+  ssize_t bytesRead = read(clientFd, buffer, sizeof(buffer) - 1);
+  if (bytesRead <= 0) {
+    close(clientFd);
+    return;
+  }
+  
+  buffer[bytesRead] = '\0';
+  // remove newline if present
+  if (buffer[bytesRead - 1] == '\n') {
+    buffer[bytesRead - 1] = '\0';
+  }
+  
+  std::string username(buffer);
+  
+  // check if username is already taken
+  {
+    std::lock_guard<std::mutex> lock(clientsMutex);
+    for (const auto& client : clientUsernames) {
+      if (client.second == username) {
+        const char* errorMsg = "Username already taken. Please reconnect with a different username.\n";
+        write(clientFd, errorMsg, strlen(errorMsg));
+        close(clientFd);
+        return;
+      }
+    }
+  }
+  
+  addClient(clientFd, username);
+  
+  std::string welcomeMsg = "welcome, " + username + "\n";
+  write(clientFd, welcomeMsg.c_str(), welcomeMsg.length());
+  
+  // notify other clients
+  std::string joinMsg = "\n" + username + " has joined the chatroom";
+  broadcastMessage(clientFd, joinMsg);
   
   while (!shouldTerminate)
   {
-    ssize_t bytesRead = read(clientFd, buffer, sizeof(buffer));
+    bytesRead = read(clientFd, buffer, sizeof(buffer) - 1);
     if (bytesRead == 0)
     {
-      std::cerr << "client disconnected." << std::endl;
+      std::cerr << "client '" << username << "' disconnected." << std::endl;
       break;
     }
     if (bytesRead < 0)
@@ -141,10 +228,22 @@ void handleClient(int clientFd)
       perror("read failed");
       break;
     }
-
+    
+    buffer[bytesRead] = '\0';
+    // remove newline if present
+    if (buffer[bytesRead - 1] == '\n') {
+      buffer[bytesRead - 1] = '\0';
+    }
+    
+    std::string message(buffer);
+    
     // broadcast message to all other clients
-    broadcastMessage(clientFd, buffer, bytesRead);
+    broadcastMessage(clientFd, message);
   }
+  
+  // notify other clients about departure
+  std::string leaveMsg = "\n" + username + " has left the chatroom";
+  broadcastMessage(clientFd, leaveMsg);
   
   removeClient(clientFd);
   close(clientFd);
@@ -152,7 +251,6 @@ void handleClient(int clientFd)
 
 int main()
 {
-  // set up signal handlers for graceful shutdown
   signal(SIGINT, signalHandler);   // ctrl c
   signal(SIGTERM, signalHandler);  // termination signal
   signal(SIGPIPE, SIG_IGN);        // ignore when user disconnects
@@ -160,6 +258,8 @@ int main()
   int server_fd = createServerSocket(PORT);
 
   std::vector<std::thread> clientThreads;
+
+  std::cout << "server started." << std::endl;
 
   // continuously accept new clients
   while (!shouldTerminate)
@@ -170,9 +270,15 @@ int main()
       // create a new thread to handle this client
       clientThreads.emplace_back(handleClient, client_fd);
     }
+    // small sleep to prevent busy waiting when no connections
+    if (!shouldTerminate) {
+      usleep(10000); // 10ms
+    }
   }
 
-  // wait for all client threads to finish
+  std::cout << "shutting down server..." << std::endl;
+
+  // wait for all client threads to finish (with timeout)
   for (auto& thread : clientThreads)
   {
     if (thread.joinable())
@@ -184,11 +290,13 @@ int main()
   // cleanup
   {
     std::lock_guard<std::mutex> lock(clientsMutex);
-    for (int clientFd : clients)
+    for (const auto& client : clientUsernames)
     {
-      close(clientFd);
+      close(client.first);
     }
   }
   close(server_fd);
+  
+  std::cout << "server shutdown complete." << std::endl;
   return 0;
 }

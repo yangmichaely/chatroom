@@ -76,14 +76,11 @@ void sendThread(int client_fd)
   std::string message;
   while (running)
   {
-    std::cout << "enter message (type quit to exit): ";
+    std::cout << "enter message: ";
     std::getline(std::cin, message);
-    
-    if (message == "quit")
-    {
-      running = false;
-      break;
-    }
+
+    // add newline to message for proper server parsing
+    message += "\n";
 
     if (sendMessage(client_fd, message) < 0)
     {
@@ -112,7 +109,7 @@ void receiveThread(int client_fd)
       running = false;
       break;
     }
-    std::cout << "\nserver: " << buffer << std::endl;
+    std::cout << buffer << std::endl;
   }
 }
 
@@ -127,7 +124,28 @@ int main()
     return -1;
   }
 
-  std::cout << "connected to server. type quit to exit." << std::endl;
+  std::cout << "connected to server." << std::endl;
+
+  // handle username prompt
+  char buffer[1024];
+  int result = receiveMessage(client_fd, buffer, sizeof(buffer));
+  if (result > 0) {
+    std::cout << buffer;
+    std::string username;
+    std::getline(std::cin, username);
+    username += "\n";
+    sendMessage(client_fd, username);
+    
+    // wait for server response (welcome message or error)
+    result = receiveMessage(client_fd, buffer, sizeof(buffer));
+    if (result > 0) {
+      std::cout << buffer;
+      if (strstr(buffer, "already taken") != nullptr) {
+        close(client_fd);
+        return -1;
+      }
+    }
+  }
 
   std::thread send_thread(sendThread, client_fd);
   std::thread receive_thread(receiveThread, client_fd);
