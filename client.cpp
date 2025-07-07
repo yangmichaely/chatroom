@@ -118,7 +118,7 @@ void sendThread(int client_fd)
     std::lock_guard<std::mutex> lock(displayMutex);
     displayInputPrompt();
   }
-  
+
   while (running)
   {
     std::string message;
@@ -182,14 +182,14 @@ void receiveThread(int client_fd)
       std::lock_guard<std::mutex> lock(displayMutex);
       // clear the current input line
       clearCurrentLine();
-      
+
       // display the received message
       std::cout << buffer;
       if (buffer[strlen(buffer) - 1] != '\n')
       {
         std::cout << std::endl;
       }
-      
+
       // redraw the input prompt
       displayInputPrompt();
     }

@@ -1,7 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <cstring>
-#include <cstdlib>  // for std::atoi
+#include <cstdlib>
 #include <unistd.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
