@@ -11,12 +11,12 @@ const int PORT = 12345;
 const int BACKLOG = 2;
 const int BUFFER_SIZE = 4096;
 
-// Global flag to control thread termination
+// global flag to control thread termination
 std::atomic<bool> shouldTerminate(false);
 
 void signalHandler(int signal)
 {
-  std::cout << "\nReceived signal " << signal << ". Shutting down gracefully..." << std::endl;
+  std::cout << "\nreceived signal " << signal << ". shutting down..." << std::endl;
   shouldTerminate = true;
 }
 
@@ -54,7 +54,7 @@ int createServerSocket(int port)
     close(server_fd);
     exit(EXIT_FAILURE);
   }
-  std::cout << "Server is listening on port " << port << std::endl;
+  std::cout << "server is listening on port " << port << std::endl;
   return server_fd;
 }
 
@@ -79,8 +79,8 @@ void relayMessages(int fromClientFd, int toClientFd)
     ssize_t bytesRead = read(fromClientFd, buffer, sizeof(buffer));
     if (bytesRead == 0)
     {
-      std::cerr << "Client disconnected." << std::endl;
-      shouldTerminate = true; // Signal other threads to terminate
+      std::cerr << "client disconnected." << std::endl;
+      shouldTerminate = true; // signal other threads to terminate
       break;
     }
     if (bytesRead < 0)
@@ -88,7 +88,7 @@ void relayMessages(int fromClientFd, int toClientFd)
       if (errno == EINTR)
         continue; // interrupted, retry
       perror("read failed");
-      shouldTerminate = true; // Signal other threads to terminate
+      shouldTerminate = true; // signal other threads to terminate
       break;
     }
 
@@ -101,7 +101,7 @@ void relayMessages(int fromClientFd, int toClientFd)
         if (errno == EINTR)
           continue;
         perror("write failed");
-        shouldTerminate = true; // Signal other threads to terminate
+        shouldTerminate = true; // signal other threads to terminate
         return;
       }
       totalWritten += bytesWritten;
@@ -111,9 +111,9 @@ void relayMessages(int fromClientFd, int toClientFd)
 
 int main()
 {
-  // Set up signal handlers for graceful shutdown
-  signal(SIGINT, signalHandler);   // Ctrl+C
-  signal(SIGTERM, signalHandler);  // Termination signal
+  // set up signal handlers for graceful shutdown
+  signal(SIGINT, signalHandler);   // ctrl c
+  signal(SIGTERM, signalHandler);  // termination signal
   signal(SIGPIPE, SIG_IGN);        // ignore when user disconnects
   
   int server_fd = createServerSocket(PORT);

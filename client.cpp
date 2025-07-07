@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-// Global flag to control thread termination
+// global flag to control thread termination
 std::atomic<bool> running(true);
 
 int createClientSocket(const char *ip, int port)
@@ -28,7 +28,7 @@ int createClientSocket(const char *ip, int port)
   // converting ipv4 to binary, assuming the server is running on my pc
   if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0)
   {
-    perror("Invalid address/ Address not supported");
+    perror("invalid address");
     exit(EXIT_FAILURE);
   }
 
@@ -64,10 +64,10 @@ int receiveMessage(int client_fd, char *buffer, size_t buffer_size)
   }
   if (bytes_received == 0)
   {
-    // Connection closed by server
+    // connection closed by server
     return 0;
   }
-  buffer[bytes_received] = '\0'; // null-terminate the string
+  buffer[bytes_received] = '\0';
   return bytes_received;
 }
 
@@ -76,7 +76,7 @@ void sendThread(int client_fd)
   std::string message;
   while (running)
   {
-    std::cout << "Enter message (type 'quit' to exit): ";
+    std::cout << "enter message (type quit to exit): ";
     std::getline(std::cin, message);
     
     if (message == "quit")
@@ -87,7 +87,7 @@ void sendThread(int client_fd)
 
     if (sendMessage(client_fd, message) < 0)
     {
-      std::cerr << "Failed to send message" << std::endl;
+      std::cerr << "failed to send message" << std::endl;
       running = false;
       break;
     }
@@ -102,17 +102,17 @@ void receiveThread(int client_fd)
     int result = receiveMessage(client_fd, buffer, sizeof(buffer));
     if (result < 0)
     {
-      std::cerr << "Failed to receive message" << std::endl;
+      std::cerr << "failed to receive message" << std::endl;
       running = false;
       break;
     }
     if (result == 0)
     {
-      std::cout << "Server disconnected" << std::endl;
+      std::cout << "server disconnected" << std::endl;
       running = false;
       break;
     }
-    std::cout << "Server: " << buffer << std::endl;
+    std::cout << "server: " << buffer << std::endl;
   }
 }
 
@@ -127,17 +127,15 @@ int main()
     return -1;
   }
 
-  std::cout << "Connected to server. Type 'quit' to exit." << std::endl;
+  std::cout << "connected to server. type quit to exit." << std::endl;
 
-  // Create and start both threads
   std::thread send_thread(sendThread, client_fd);
   std::thread receive_thread(receiveThread, client_fd);
 
-  // Wait for both threads to complete
   send_thread.join();
   receive_thread.join();
 
   close(client_fd);
-  std::cout << "Client disconnected." << std::endl;
+  std::cout << "client disconnected." << std::endl;
   return 0;
 }
