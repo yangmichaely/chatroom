@@ -112,7 +112,7 @@ void receiveThread(int client_fd)
       running = false;
       break;
     }
-    std::cout << "server: " << buffer << std::endl;
+    std::cout << "\nserver: " << buffer << std::endl;
   }
 }
 
