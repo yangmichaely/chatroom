@@ -1,6 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <cstring>
+#include <cstdlib>  // for std::atoi
 #include <unistd.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -15,7 +16,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 
-const int PORT = 12345;
+const int DEFAULT_PORT = 12345;
 const int BACKLOG = 10;
 const int BUFFER_SIZE = 4096;
 
@@ -258,13 +259,33 @@ void handleClient(int clientFd)
   close(clientFd);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+  // default port
+  int port = DEFAULT_PORT;
+
+  // parse command line arguments
+  if (argc >= 2)
+  {
+    port = std::atoi(argv[1]);
+    if (port <= 0 || port > 65535)
+    {
+      std::cerr << "Error: Invalid port number. Port must be between 1 and 65535." << std::endl;
+      return -1;
+    }
+  }
+  if (argc > 2)
+  {
+    std::cout << "Usage: " << argv[0] << " [port]" << std::endl;
+    std::cout << "  port: Port number (default: " << DEFAULT_PORT << ")" << std::endl;
+    return -1;
+  }
+
   signal(SIGINT, signalHandler);  // ctrl c
   signal(SIGTERM, signalHandler); // termination signal
   signal(SIGPIPE, SIG_IGN);       // ignore when user disconnects
 
-  int server_fd = createServerSocket(PORT);
+  int server_fd = createServerSocket(port);
 
   std::vector<std::thread> clientThreads;
 
