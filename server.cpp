@@ -75,31 +75,35 @@ int acceptClient(int server_fd)
   // use select to check if there's a pending connection with timeout
   fd_set readfds;
   struct timeval timeout;
-  
+
   FD_ZERO(&readfds);
   FD_SET(server_fd, &readfds);
-  
-  timeout.tv_sec = 1;  // 1 second timeout
+
+  timeout.tv_sec = 1; // 1 second timeout
   timeout.tv_usec = 0;
-  
+
   int activity = select(server_fd + 1, &readfds, NULL, NULL, &timeout);
-  
-  if (activity < 0) {
-    if (errno == EINTR) {
+
+  if (activity < 0)
+  {
+    if (errno == EINTR)
+    {
       return -1; // interrupted by signal
     }
     perror("select");
     return -1;
   }
-  
-  if (activity == 0) {
+
+  if (activity == 0)
+  {
     return -1; // timeout, no connection pending
   }
-  
-  if (!FD_ISSET(server_fd, &readfds)) {
+
+  if (!FD_ISSET(server_fd, &readfds))
+  {
     return -1; // no connection pending
   }
-  
+
   struct sockaddr_in client_addr;
   socklen_t addr_len = sizeof(client_addr);
   int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
@@ -115,7 +119,7 @@ int acceptClient(int server_fd)
   return client_fd;
 }
 
-void addClient(int clientFd, const std::string& username)
+void addClient(int clientFd, const std::string &username)
 {
   std::lock_guard<std::mutex> lock(clientsMutex);
   clientUsernames[clientFd] = username;
@@ -126,27 +130,27 @@ void removeClient(int clientFd)
 {
   std::lock_guard<std::mutex> lock(clientsMutex);
   auto it = clientUsernames.find(clientFd);
-  if (it != clientUsernames.end()) {
+  if (it != clientUsernames.end())
+  {
     std::cout << "client '" << it->second << "' disconnected. total clients: " << clientUsernames.size() - 1 << std::endl;
     clientUsernames.erase(it);
   }
 }
 
-void broadcastMessage(int senderFd, const std::string& message)
+void broadcastMessage(int senderFd, const std::string &message)
 {
   std::lock_guard<std::mutex> lock(clientsMutex);
-  
-  // get sender's username
+
   std::string senderUsername = "Unknown";
   auto senderIt = clientUsernames.find(senderFd);
-  if (senderIt != clientUsernames.end()) {
+  if (senderIt != clientUsernames.end())
+  {
     senderUsername = senderIt->second;
   }
-  
-  // format the message with username
-  std::string formattedMessage = "\n" + senderUsername + ": " + message;
-  
-  for (const auto& client : clientUsernames)
+
+  std::string formattedMessage = senderUsername + ": " + message;
+
+  for (const auto &client : clientUsernames)
   {
     if (client.first != senderFd) // don't send message back to sender
     {
@@ -171,48 +175,52 @@ void broadcastMessage(int senderFd, const std::string& message)
 void handleClient(int clientFd)
 {
   char buffer[BUFFER_SIZE];
-  
+
   // first, ask for username
-  const char* usernamePrompt = "username: ";
+  const char *usernamePrompt = "username: ";
   write(clientFd, usernamePrompt, strlen(usernamePrompt));
-  
+
   // read username
   ssize_t bytesRead = read(clientFd, buffer, sizeof(buffer) - 1);
-  if (bytesRead <= 0) {
+  if (bytesRead <= 0)
+  {
     close(clientFd);
     return;
   }
-  
+
   buffer[bytesRead] = '\0';
   // remove newline if present
-  if (buffer[bytesRead - 1] == '\n') {
+  if (buffer[bytesRead - 1] == '\n')
+  {
     buffer[bytesRead - 1] = '\0';
   }
-  
+
   std::string username(buffer);
-  
+
   // check if username is already taken
   {
     std::lock_guard<std::mutex> lock(clientsMutex);
-    for (const auto& client : clientUsernames) {
-      if (client.second == username) {
-        const char* errorMsg = "Username already taken. Please reconnect with a different username.\n";
+    for (const auto &client : clientUsernames)
+    {
+      if (client.second == username)
+      {
+        const char *errorMsg = "Username already taken. Please reconnect with a different username.\n";
         write(clientFd, errorMsg, strlen(errorMsg));
         close(clientFd);
         return;
       }
     }
   }
-  
+
   addClient(clientFd, username);
-  
+
   std::string welcomeMsg = "welcome, " + username + "\n";
   write(clientFd, welcomeMsg.c_str(), welcomeMsg.length());
-  
+
   // notify other clients
-  std::string joinMsg = "\n" + username + " has joined the chatroom";
+  std::string joinMsg = username + " has joined the chatroom";
   broadcastMessage(clientFd, joinMsg);
-  
+
   while (!shouldTerminate)
   {
     bytesRead = read(clientFd, buffer, sizeof(buffer) - 1);
@@ -228,33 +236,34 @@ void handleClient(int clientFd)
       perror("read failed");
       break;
     }
-    
+
     buffer[bytesRead] = '\0';
     // remove newline if present
-    if (buffer[bytesRead - 1] == '\n') {
+    if (buffer[bytesRead - 1] == '\n')
+    {
       buffer[bytesRead - 1] = '\0';
     }
-    
+
     std::string message(buffer);
-    
+
     // broadcast message to all other clients
     broadcastMessage(clientFd, message);
   }
-  
+
   // notify other clients about departure
   std::string leaveMsg = "\n" + username + " has left the chatroom";
   broadcastMessage(clientFd, leaveMsg);
-  
+
   removeClient(clientFd);
   close(clientFd);
 }
 
 int main()
 {
-  signal(SIGINT, signalHandler);   // ctrl c
-  signal(SIGTERM, signalHandler);  // termination signal
-  signal(SIGPIPE, SIG_IGN);        // ignore when user disconnects
-  
+  signal(SIGINT, signalHandler);  // ctrl c
+  signal(SIGTERM, signalHandler); // termination signal
+  signal(SIGPIPE, SIG_IGN);       // ignore when user disconnects
+
   int server_fd = createServerSocket(PORT);
 
   std::vector<std::thread> clientThreads;
@@ -271,15 +280,16 @@ int main()
       clientThreads.emplace_back(handleClient, client_fd);
     }
     // small sleep to prevent busy waiting when no connections
-    if (!shouldTerminate) {
-      usleep(10000); // 10ms
+    if (!shouldTerminate)
+    {
+      usleep(10000);
     }
   }
 
   std::cout << "shutting down server..." << std::endl;
 
   // wait for all client threads to finish (with timeout)
-  for (auto& thread : clientThreads)
+  for (auto &thread : clientThreads)
   {
     if (thread.joinable())
     {
@@ -290,13 +300,13 @@ int main()
   // cleanup
   {
     std::lock_guard<std::mutex> lock(clientsMutex);
-    for (const auto& client : clientUsernames)
+    for (const auto &client : clientUsernames)
     {
       close(client.first);
     }
   }
   close(server_fd);
-  
+
   std::cout << "server shutdown complete." << std::endl;
   return 0;
 }
