@@ -1,2 +1,2 @@
 # chatroom
-my attempt at reviewing some os concepts
+quick thing i did to review some os concepts
