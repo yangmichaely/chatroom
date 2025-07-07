@@ -121,6 +121,9 @@ void sendThread(int client_fd)
     if (!running)
       break;
 
+    if (message.empty())
+      continue;
+
     if (message == "/quit" || message == "/exit")
     {
       running = false;
@@ -129,6 +132,8 @@ void sendThread(int client_fd)
 
     {
       std::lock_guard<std::mutex> lock(displayMutex);
+      moveCursorUp(1);
+      clearCurrentLine();
       std::cout << "you: " << message << std::endl;
     }
 
